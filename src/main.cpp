@@ -45,7 +45,19 @@ static std::ostream& operator<<(std::ostream& os, const Color& c) {
 }
 
 static std::filesystem::path appdata() {
-  static const std::filesystem::path appdataPath{std::getenv("APPDATA")};
+  static const std::filesystem::path appdataPath{[]() {
+    PWSTR path{nullptr};
+
+    if (S_OK != ::SHGetKnownFolderPath(::FOLDERID_RoamingAppData,
+                                       KF_FLAG_DEFAULT, nullptr, &path)) {
+      std::cerr << Color::ERROR_COLOR << "Error obtaining APPDATA path.\n"
+                << Color::RESET;
+      ::exit(EXIT_FAILURE);
+    }
+
+    return std::filesystem::path{path};
+  }()};
+
   return appdataPath;
 }
 
