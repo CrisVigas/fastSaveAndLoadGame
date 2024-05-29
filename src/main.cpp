@@ -1,3 +1,5 @@
+
+#include <shlobj.h>
 #include <windows.h>
 
 #include <algorithm>
@@ -7,6 +9,7 @@
 #include <iostream>
 #include <string>
 #include <string_view>
+#include <thread>  // NOLINT(build/c++11)
 #include <vector>
 
 constexpr std::string_view SAVE_ROOT{"EldenRing"};
@@ -184,6 +187,26 @@ static bool restore(const std::filesystem::path& backupPath,
   return b1;
 }
 
+static void pressAndRelease(const char kchar, const bool isArrow) {
+  const auto key = static_cast<WORD>(kchar);
+  constexpr auto pressingTime = std::chrono::milliseconds(50);
+
+  INPUT input;
+  input.type = INPUT_KEYBOARD;
+  input.ki.wVk = key;
+  input.ki.wScan = MapVirtualKey(key, 0);
+  input.ki.dwFlags = (isArrow) ? KEYEVENTF_EXTENDEDKEY : 0;
+
+  ::SendInput(1, &input, sizeof(INPUT));
+  std::this_thread::sleep_for(pressingTime);
+  input.ki.dwFlags =
+      (isArrow) ? (KEYEVENTF_EXTENDEDKEY | KEYEVENTF_KEYUP) : KEYEVENTF_KEYUP;
+
+  ::SendInput(1, &input, sizeof(INPUT));
+}
+
+enum class Action { BACKUP = 0, RESTORE = 1, QUIT = 2 };
+
 int main() {
   const std::filesystem::path GAME_SAVE_PATH{::steamIdPath() / ::SAVE_FILE};
 
@@ -201,28 +224,43 @@ int main() {
     return EXIT_FAILURE;
   }
 
-  ::MSG msg{0};
-
-  if (!(static_cast<bool>(::RegisterHotKey(nullptr, 0, MOD_NOREPEAT, VK_F1)) &&
-        static_cast<bool>(::RegisterHotKey(nullptr, 1, MOD_NOREPEAT, VK_F5)) &&
-        static_cast<bool>(::RegisterHotKey(nullptr, 2, MOD_CONTROL, 'Q')))) {
+  if (!(static_cast<bool>(::RegisterHotKey(nullptr,
+                                           static_cast<int8_t>(Action::BACKUP),
+                                           MOD_NOREPEAT, VK_F1)) &&
+        static_cast<bool>(::RegisterHotKey(nullptr,
+                                           static_cast<int8_t>(Action::RESTORE),
+                                           MOD_NOREPEAT, VK_F5)) &&
+        static_cast<bool>(::RegisterHotKey(
+            nullptr, static_cast<int8_t>(Action::QUIT), MOD_CONTROL, 'Q')))) {
     std::cerr << Color::ERROR_COLOR << "Failed to register hotkeys!\n";
     return EXIT_FAILURE;
   }
 
   std::cout << "\t >> Press CTRL + Q to quit. <<\n";
 
-  while (GetMessage(&msg, nullptr, 0, 0) != 0) {
-    if (msg.message == WM_HOTKEY) {
-      switch (msg.wParam) {
-        case 0:
-          ::backup(GAME_SAVE_PATH, BACKUP_PATH, TEMP_OLD_BACKUP_PATH);
+  bool quit{false};
+  ::MSG msg;
+  while ((!quit) && (GetMessage(&msg, nullptr, 0, 0) != 0)) {
+    if (WM_HOTKEY == msg.message) {
+      switch (static_cast<Action>(msg.wParam)) {
+        case Action::BACKUP:
+          if (::backup(GAME_SAVE_PATH, BACKUP_PATH, TEMP_OLD_BACKUP_PATH)) {
+            ::pressAndRelease('E', false);
+          } else {
+            std::cerr << Color::ERROR_COLOR << ::timestamp() << " | "
+                      << "Failed to backup game save\n";
+          }
           break;
-        case 1:
-          ::restore(BACKUP_PATH, GAME_SAVE_PATH);
+        case Action::RESTORE:
+          if (::restore(BACKUP_PATH, GAME_SAVE_PATH)) {
+            ::pressAndRelease('E', false);
+          } else {
+            std::cerr << Color::ERROR_COLOR << ::timestamp() << " | "
+                      << "Failed to restore game save\n";
+          }
           break;
-        case 2:
-          ::exit(EXIT_SUCCESS);
+        case Action::QUIT:
+          quit = true;
           break;
         default:
           break;
