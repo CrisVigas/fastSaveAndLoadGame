@@ -112,7 +112,7 @@ static bool checkOrCreateDir(const std::filesystem::path& path) {
   if (!std::filesystem::exists(path)) {
     res = std::filesystem::create_directories(path);
     std::cout << ::timestamp() << " | " << Color::BLUE << "Created directory @"
-              << Color::RESET << path << '\n';
+              << path << Color::RESET << '\n';
   }
 
   if (!res) {
